@@ -10,8 +10,14 @@
         #system-prompt { width: 100%; height: 100px; margin-bottom: 10px; }
         #chat-box { height: 400px; border: 1px solid #ddd; overflow-y: scroll; padding: 10px; margin-bottom: 10px; }
         #user-input { width: 100%; padding: 5px; }
-        .user-message { color: blue; }
-        .ai-message { color: green; }
+        .user-message { color: blue; margin-bottom: 10px; }
+        .ai-message {
+            color: green;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: monospace;
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
@@ -45,7 +51,7 @@
                         if (response.system_prompt !== systemPrompt) {
                             $('#system-prompt').val(response.system_prompt);
                         }
-                        $('#chat-box').append('<p class="ai-message"><strong>AI:</strong> ' + response.response + '</p>');
+                        $('#chat-box').append('<pre class="ai-message"><strong>AI:</strong> ' + response.response + '</pre>');
                         $('#chat-box').scrollTop($('#chat-box')[0].scrollHeight);
                     }
                 });
