@@ -18,9 +18,20 @@ if not sys.warnoptions:
 model_path = r"F:\lmstudio\cognitivecomputations\dolphin-2.9-llama3-8b-gguf\dolphin-2.9-llama3-8b-q6_K.gguf"
 llm = Llama(model_path=model_path, verbose=False)
 
+# Define system prompt and user prompt
+system_prompt = "You are a helpful AI assistant named Claude. You are knowledgeable, friendly, and always strive to provide accurate information."
+user_prompt = "Tell me about the importance of renewable energy."
+
+# Combine system prompt and user prompt
+full_prompt = f"""### System:
+{system_prompt}
+
+### Human: {user_prompt}
+
+### Assistant: """
+
 # Generate text
-prompt = "Once upon a time, in a land far away,"
-output = llm(prompt, max_tokens=10000, echo=False)
+output = llm(full_prompt, max_tokens=10000, echo=False, stop=["### Human:", "\n\n"])
 
 # Print the generated text
 print(output['choices'][0]['text'])
