@@ -5,6 +5,8 @@ from llama_cpp import Llama
 from flask import Flask, render_template, request, jsonify
 from functools import wraps
 import time
+import threading
+from queue import Queue, Empty
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -28,6 +30,8 @@ current_system_prompt = default_system_prompt
 MAX_TOKENS = int(CONTEXT_LENGTH * 0.8) # Leave some room for the new prompt and response
 TOKENS_PER_MESSAGE = 4  # Rough estimate for "### Human: " and "### Assistant: "
 APPROXIMATE_TOKENS_PER_WORD = 1.3
+
+response_lock = threading.Lock()
 
 def estimate_tokens(text):
     return int(len(text.split()) * APPROXIMATE_TOKENS_PER_WORD)
@@ -77,20 +81,34 @@ def generate_response(prompt, system_prompt):
 
 ### Assistant: """
     
-    try:
-        logger.info(f"Generating response for prompt: {prompt[:50]}...")
-        logger.info(f"Using system prompt: {system_prompt[:50]}...")
+    logger.info(f"Generating response for prompt: {prompt[:50]}...")
+    logger.info(f"Using system prompt: {system_prompt[:50]}...")
+    
+    def generate():
+        nonlocal full_prompt
         output = llm(full_prompt, max_tokens=int(CONTEXT_LENGTH * 0.5), echo=False, stop=["### Human:"])
-        response = output['choices'][0]['text'].strip()
+        return output['choices'][0]['text'].strip()
+
+    queue = Queue()
+    thread = threading.Thread(target=lambda q, fn: q.put(fn()), args=(queue, generate))
+    thread.start()
+
+    try:
+        response = queue.get(block=True, timeout=30)  # 30 second timeout
+        logger.info(f"Response generated successfully. Length: {len(response)} characters")
         
         # Update conversation history
         manage_conversation_history(prompt, response)
         
-        logger.info(f"Response generated successfully. Length: {len(response)} characters")
         return response
+    except Empty:
+        logger.error("Response generation timed out after 30 seconds")
+        raise Exception("Response generation timed out")
     except Exception as e:
         logger.error(f"Error generating response: {str(e)}")
         raise
+    finally:
+        thread.join(timeout=1)
 
 @app.route('/')
 def home():
@@ -108,15 +126,22 @@ def chat():
     if new_system_prompt:
         logger.info(f"Updating system prompt to: {new_system_prompt[:50]}...")
         current_system_prompt = new_system_prompt
-    
+
+    if response_lock.locked():
+        return jsonify({'error': 'A response is currently being generated. Please wait and try again.'}), 429
+
     try:
-        ai_response = generate_response(user_message, current_system_prompt)
-        logger.info(f"Chat response generated successfully. Length: {len(ai_response)} characters")
-        logger.info("Response preview:")
-        logger.info(ai_response[:200] + "..." if len(ai_response) > 200 else ai_response)
+        with response_lock:
+            ai_response = generate_response(user_message, current_system_prompt)
+            logger.info(f"Chat response generated successfully. Length: {len(ai_response)} characters")
+            logger.info("Response preview:")
+            logger.info(ai_response[:200] + "..." if len(ai_response) > 200 else ai_response)
+        
         return jsonify({'response': ai_response, 'system_prompt': current_system_prompt})
     except Exception as e:
         logger.error(f"Error in chat endpoint: {str(e)}")
+        if "timed out" in str(e).lower():
+            return jsonify({'error': 'The response took too long to generate. Please try again.'}), 504
         return jsonify({'error': 'An error occurred while processing your request.'}), 500
 
 @app.route('/health')
