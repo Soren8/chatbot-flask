@@ -16,22 +16,43 @@ if not sys.warnoptions:
 
 # Initialize the model with the provided path
 model_path = r"F:\lmstudio\cognitivecomputations\dolphin-2.9-llama3-8b-gguf\dolphin-2.9-llama3-8b-q6_K.gguf"
-llm = Llama(model_path=model_path, verbose=False)
+llm = Llama(model_path=model_path, verbose=False, n_ctx=8192)
 
-# Define system prompt and user prompt
-system_prompt = "You are a helpful AI assistant named Claude. You are knowledgeable, friendly, and always strive to provide accurate information."
-user_prompt = "Tell me about the importance of renewable energy."
+def get_system_prompt():
+    default_prompt = "You are a helpful AI assistant named Llama. You are knowledgeable, friendly, and always strive to provide accurate information."
+    print("\nEnter a custom system prompt, or press Enter to use the default:")
+    print(f"Default: {default_prompt}")
+    user_input = input("Custom prompt: ").strip()
+    return user_input if user_input else default_prompt
 
-# Combine system prompt and user prompt
-full_prompt = f"""### System:
-{system_prompt}
+def generate_response(prompt, conversation_history, system_prompt):
+    full_prompt = f"""{system_prompt}
 
-### Human: {user_prompt}
+{conversation_history}
+
+### Human: {prompt}
 
 ### Assistant: """
+    
+    output = llm(full_prompt, max_tokens=10000, echo=False, stop=["### Human:", "\n\n"])
+    return output['choices'][0]['text'].strip()
 
-# Generate text
-output = llm(full_prompt, max_tokens=10000, echo=False, stop=["### Human:", "\n\n"])
+def main():
+    system_prompt = get_system_prompt()
+    print("\nWelcome to the AI chat! Type 'exit' to end the conversation.")
+    conversation_history = ""
+    
+    while True:
+        user_input = input("\nYou: ").strip()
+        if user_input.lower() == 'exit':
+            print("Thank you for chatting. Goodbye!")
+            break
+        
+        response = generate_response(user_input, conversation_history, system_prompt)
+        print(f"\nAI: {response}")
+        
+        # Update conversation history
+        conversation_history += f"\n### Human: {user_input}\n\n### Assistant: {response}\n"
 
-# Print the generated text
-print(output['choices'][0]['text'])
+if __name__ == "__main__":
+    main()
