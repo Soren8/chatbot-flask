@@ -80,7 +80,7 @@ def generate_response(prompt, system_prompt):
     try:
         logger.info(f"Generating response for prompt: {prompt[:50]}...")
         logger.info(f"Using system prompt: {system_prompt[:50]}...")
-        output = llm(full_prompt, max_tokens=10000, echo=False, stop=["### Human:", "\n\n"])
+        output = llm(full_prompt, max_tokens=10000, echo=False, stop=["### Human:"])
         response = output['choices'][0]['text'].strip()
         
         # Update conversation history
@@ -111,7 +111,9 @@ def chat():
     
     try:
         ai_response = generate_response(user_message, current_system_prompt)
-        logger.info("Chat response generated successfully")
+        logger.info(f"Chat response generated successfully. Length: {len(ai_response)} characters")
+        logger.info("Response preview:")
+        logger.info(ai_response[:200] + "..." if len(ai_response) > 200 else ai_response)
         return jsonify({'response': ai_response, 'system_prompt': current_system_prompt})
     except Exception as e:
         logger.error(f"Error in chat endpoint: {str(e)}")
