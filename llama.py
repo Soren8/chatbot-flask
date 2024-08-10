@@ -25,7 +25,7 @@ conversation_history = []
 current_system_prompt = default_system_prompt
 
 # Approximate token counts (these are rough estimates, adjust as needed)
-MAX_TOKENS = int(CONTEXT_LENGTH * 0.9) # Leave some room for the new prompt and response
+MAX_TOKENS = int(CONTEXT_LENGTH * 0.8) # Leave some room for the new prompt and response
 TOKENS_PER_MESSAGE = 4  # Rough estimate for "### Human: " and "### Assistant: "
 APPROXIMATE_TOKENS_PER_WORD = 1.3
 
@@ -80,7 +80,7 @@ def generate_response(prompt, system_prompt):
     try:
         logger.info(f"Generating response for prompt: {prompt[:50]}...")
         logger.info(f"Using system prompt: {system_prompt[:50]}...")
-        output = llm(full_prompt, max_tokens=10000, echo=False, stop=["### Human:"])
+        output = llm(full_prompt, max_tokens=int(CONTEXT_LENGTH * 0.5), echo=False, stop=["### Human:"])
         response = output['choices'][0]['text'].strip()
         
         # Update conversation history
