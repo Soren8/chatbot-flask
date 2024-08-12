@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 CONTEXT_LENGTH = 8192
 
 # Initialize the model with the provided path and increased context length
-model_path = r"F:\lmstudio\cognitivecomputations\dolphin-2.9-llama3-8b-gguf\dolphin-2.9-llama3-8b-q6_K.gguf"
+model_path = r"F:\lmstudio\cognitivecomputations\dolphin-2.9-llama3-8b-gguf\dolphin-2.9-llama3-8b-q3_K_M.gguf"
 llm = Llama(model_path=model_path, n_ctx=CONTEXT_LENGTH)
 
 # Create Flask app
