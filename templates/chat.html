@@ -24,7 +24,6 @@
 <body>
     <h1>AI Chat</h1>
     <textarea id="system-prompt" placeholder="Enter custom system prompt here...">You are a helpful AI assistant named Llama. You are knowledgeable, friendly, and always strive to provide accurate information.</textarea>
-    <button id="update-prompt">Update System Prompt</button>
     <div id="chat-box"></div>
     <input type="text" id="user-input" placeholder="Type your message here...">
 
@@ -65,37 +64,11 @@
                 });
             }
 
-            function updateSystemPrompt() {
-                var systemPrompt = $('#system-prompt').val();
-                
-                $.ajax({
-                    url: '/update_system_prompt',
-                    method: 'POST',
-                    contentType: 'application/json',
-                    data: JSON.stringify({system_prompt: systemPrompt}),
-                    success: function(response) {
-                        if (response.error) {
-                            $('#chat-box').append('<p class="error-message"><strong>Error:</strong> ' + response.error + '</p>');
-                        } else {
-                            $('#chat-box').append('<p class="system-message"><strong>System:</strong> System prompt updated successfully.</p>');
-                        }
-                        $('#chat-box').scrollTop($('#chat-box')[0].scrollHeight);
-                    },
-                    error: function(jqXHR, textStatus, errorThrown) {
-                        $('#chat-box').append('<p class="error-message"><strong>Error:</strong> ' + errorThrown + '</p>');
-                    }
-                });
-            }
-
             $('#user-input').keypress(function(e) {
                 if (e.which == 13) {
                     sendMessage();
                     return false;
                 }
-            });
-
-            $('#update-prompt').click(function() {
-                updateSystemPrompt();
             });
         });
     </script>
