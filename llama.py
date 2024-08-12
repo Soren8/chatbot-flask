@@ -149,6 +149,18 @@ def health_check():
     logger.info("Health check requested")
     return jsonify({'status': 'healthy'}), 200
 
+@app.route('/update_system_prompt', methods=['POST'])
+def update_system_prompt():
+    global current_system_prompt
+    new_system_prompt = request.json.get('system_prompt')
+    
+    if new_system_prompt:
+        logger.info(f"Updating system prompt to: {new_system_prompt[:50]}...")
+        current_system_prompt = new_system_prompt
+        return jsonify({'status': 'success', 'system_prompt': current_system_prompt})
+    else:
+        return jsonify({'error': 'No system prompt provided'}), 400
+
 if __name__ == "__main__":
     logger.info("Starting the Flask application")
     app.run(host='0.0.0.0', port=5000)

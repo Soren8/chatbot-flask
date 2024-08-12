@@ -67,15 +67,22 @@
 
             function updateSystemPrompt() {
                 var systemPrompt = $('#system-prompt').val();
+                
                 $.ajax({
-                    url: '/chat',
+                    url: '/update_system_prompt',
                     method: 'POST',
                     contentType: 'application/json',
-                    data: JSON.stringify({message: "", system_prompt: systemPrompt}),
+                    data: JSON.stringify({system_prompt: systemPrompt}),
                     success: function(response) {
-                        $('#system-prompt').val(response.system_prompt);
-                        $('#chat-box').append('<p class="ai-message"><strong>AI:</strong> ' + response.response + '</p>');
+                        if (response.error) {
+                            $('#chat-box').append('<p class="error-message"><strong>Error:</strong> ' + response.error + '</p>');
+                        } else {
+                            $('#chat-box').append('<p class="system-message"><strong>System:</strong> System prompt updated successfully.</p>');
+                        }
                         $('#chat-box').scrollTop($('#chat-box')[0].scrollHeight);
+                    },
+                    error: function(jqXHR, textStatus, errorThrown) {
+                        $('#chat-box').append('<p class="error-message"><strong>Error:</strong> ' + errorThrown + '</p>');
                     }
                 });
             }
