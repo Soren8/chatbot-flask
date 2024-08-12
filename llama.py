@@ -149,6 +149,13 @@ def health_check():
     logger.info("Health check requested")
     return jsonify({'status': 'healthy'}), 200
 
+@app.route('/reset_chat', methods=['POST'])
+def reset_chat():
+    global conversation_history
+    conversation_history = []
+    logger.info("Chat history has been reset.")
+    return jsonify({'status': 'success', 'message': 'Chat history has been reset.'})
+
 if __name__ == "__main__":
     logger.info("Starting the Flask application")
     app.run(host='0.0.0.0', port=5000)

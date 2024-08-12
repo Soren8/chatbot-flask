@@ -26,6 +26,7 @@
     <textarea id="system-prompt" placeholder="Enter custom system prompt here...">You are a helpful AI assistant named Llama. You are knowledgeable, friendly, and always strive to provide accurate information.</textarea>
     <div id="chat-box"></div>
     <input type="text" id="user-input" placeholder="Type your message here...">
+    <button id="reset-chat">Reset Chat</button>
 
     <script>
         $(document).ready(function() {
@@ -63,6 +64,26 @@
                     }
                 });
             }
+
+            $('#reset-chat').click(function() {
+                $.ajax({
+                    url: '/reset_chat',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    success: function(response) {
+                        if (response.status === 'success') {
+                            $('#chat-box').empty();
+                            $('#chat-box').append('<p class="system-message"><strong>System:</strong> Chat history has been reset.</p>');
+                        } else {
+                            $('#chat-box').append('<p class="error-message"><strong>Error:</strong> ' + response.error + '</p>');
+                        }
+                        $('#chat-box').scrollTop($('#chat-box')[0].scrollHeight);
+                    },
+                    error: function(jqXHR, textStatus, errorThrown) {
+                        $('#chat-box').append('<p class="error-message"><strong>Error:</strong> ' + errorThrown + '</p>');
+                    }
+                });
+            });
 
             $('#user-input').keypress(function(e) {
                 if (e.which == 13) {
