@@ -7,6 +7,7 @@ from functools import wraps
 import time
 import threading
 from queue import Queue, Empty
+from collections import defaultdict
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -22,9 +23,9 @@ llm = Llama(model_path=model_path, n_ctx=CONTEXT_LENGTH)
 # Create Flask app
 app = Flask(__name__)
 
-default_system_prompt = "You are a helpful AI assistant named Llama. You are knowledgeable, friendly, and always strive to provide accurate information."
-conversation_history = []
-current_system_prompt = default_system_prompt
+# Session variables
+sessions = defaultdict(lambda: {"history": [], "system_prompt": "You are a helpful AI assistant named Llama. You are knowledgeable, friendly, and always strive to provide accurate information.", "last_used": time.time()})
+SESSION_TIMEOUT = 3600  # 1 hour in seconds
 
 # Approximate token counts (these are rough estimates, adjust as needed)
 MAX_TOKENS = int(CONTEXT_LENGTH * 0.8) # Leave some room for the new prompt and response
@@ -36,21 +37,21 @@ response_lock = threading.Lock()
 def estimate_tokens(text):
     return int(len(text.split()) * APPROXIMATE_TOKENS_PER_WORD)
 
-def manage_conversation_history(new_prompt, new_response):
-    global conversation_history
-    
+def manage_conversation_history(history, new_prompt, new_response):
     # Add new exchange to history
-    conversation_history.append((new_prompt, new_response))
+    history.append((new_prompt, new_response))
     
     # Calculate total tokens
     total_tokens = sum(estimate_tokens(prompt) + estimate_tokens(response) + TOKENS_PER_MESSAGE 
-                       for prompt, response in conversation_history)
+                       for prompt, response in history)
     
     # Remove oldest exchanges if we exceed the limit
-    while total_tokens > MAX_TOKENS and conversation_history:
-        removed_prompt, removed_response = conversation_history.pop(0)
+    while total_tokens > MAX_TOKENS and history:
+        removed_prompt, removed_response = history.pop(0)
         total_tokens -= (estimate_tokens(removed_prompt) + estimate_tokens(removed_response) + TOKENS_PER_MESSAGE)
         logger.info(f"Removed oldest exchange to maintain context length. Current estimated tokens: {total_tokens}")
+    
+    return history
 
 def retry_on_exception(max_retries=3, delay=1):
     def decorator(func):
@@ -68,10 +69,8 @@ def retry_on_exception(max_retries=3, delay=1):
     return decorator
 
 @retry_on_exception()
-def generate_response(prompt, system_prompt):
-    global conversation_history
-    
-    history_text = "\n".join([f"### Human: {p}\n\n### Assistant: {r}" for p, r in conversation_history])
+def generate_response(prompt, system_prompt, history):
+    history_text = "\n".join([f"### Human: {p}\n\n### Assistant: {r}" for p, r in history])
     
     full_prompt = f"""{system_prompt}
 
@@ -98,9 +97,9 @@ def generate_response(prompt, system_prompt):
         logger.info(f"Response generated successfully. Length: {len(response)} characters")
         
         # Update conversation history
-        manage_conversation_history(prompt, response)
+        history = manage_conversation_history(history, prompt, response)
         
-        return response
+        return response, history
     except Empty:
         logger.error("Response generation timed out after 30 seconds")
         raise Exception("Response generation timed out")
@@ -115,29 +114,43 @@ def home():
     logger.info("Serving home page")
     return render_template('chat.html')
 
+def clean_old_sessions():
+    current_time = time.time()
+    for session_id in list(sessions.keys()):
+        if current_time - sessions[session_id]["last_used"] > SESSION_TIMEOUT:
+            del sessions[session_id]
+
 @app.route('/chat', methods=['POST'])
 def chat():
-    global current_system_prompt
+    session_id = request.json.get('session_id')
+    if not session_id:
+        return jsonify({'error': 'No session ID provided'}), 400
+    
+    clean_old_sessions()
+    
+    session = sessions[session_id]
+    session["last_used"] = time.time()
+    
     user_message = request.json['message']
     new_system_prompt = request.json.get('system_prompt')
     
-    logger.info(f"Received chat request. Message: {user_message[:50]}...")
+    logger.info(f"Received chat request. Session: {session_id[:8]}... Message: {user_message[:50]}...")
     
     if new_system_prompt:
         logger.info(f"Updating system prompt to: {new_system_prompt[:50]}...")
-        current_system_prompt = new_system_prompt
+        session["system_prompt"] = new_system_prompt
 
     if response_lock.locked():
         return jsonify({'error': 'A response is currently being generated. Please wait and try again.'}), 429
 
     try:
         with response_lock:
-            ai_response = generate_response(user_message, current_system_prompt)
+            ai_response, session["history"] = generate_response(user_message, session["system_prompt"], session["history"])
             logger.info(f"Chat response generated successfully. Length: {len(ai_response)} characters")
             logger.info("Response preview:")
             logger.info(ai_response[:200] + "..." if len(ai_response) > 200 else ai_response)
         
-        return jsonify({'response': ai_response, 'system_prompt': current_system_prompt})
+        return jsonify({'response': ai_response, 'system_prompt': session["system_prompt"]})
     except Exception as e:
         logger.error(f"Error in chat endpoint: {str(e)}")
         if "timed out" in str(e).lower():
@@ -151,9 +164,15 @@ def health_check():
 
 @app.route('/reset_chat', methods=['POST'])
 def reset_chat():
-    global conversation_history
-    conversation_history = []
-    logger.info("Chat history has been reset.")
+    session_id = request.json.get('session_id')
+    if not session_id:
+        return jsonify({'error': 'No session ID provided'}), 400
+    
+    if session_id in sessions:
+        sessions[session_id]["history"] = []
+        sessions[session_id]["system_prompt"] = "You are a helpful AI assistant named Llama. You are knowledgeable, friendly, and always strive to provide accurate information."
+        logger.info(f"Chat history has been reset for session {session_id[:8]}...")
+    
     return jsonify({'status': 'success', 'message': 'Chat history has been reset.'})
 
 if __name__ == "__main__":

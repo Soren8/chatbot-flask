@@ -29,69 +29,74 @@
     <button id="reset-chat">Reset Chat</button>
 
     <script>
-        $(document).ready(function() {
-            function sendMessage() {
-                var userMessage = $('#user-input').val();
-                var systemPrompt = $('#system-prompt').val();
-                if (userMessage.trim() === '') return;
+$(document).ready(function() {
+    // Generate a new session ID every time the page loads
+    var sessionId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
-                $('#chat-box').append('<p class="user-message"><strong>You:</strong> ' + userMessage + '</p>');
-                $('#user-input').val('');
+    function sendMessage() {
+        var userMessage = $('#user-input').val();
+        var systemPrompt = $('#system-prompt').val();
+        if (userMessage.trim() === '') return;
 
-                var requestData = {
-                    message: userMessage,
-                    system_prompt: systemPrompt
-                };
+        $('#chat-box').append('<p class="user-message"><strong>You:</strong> ' + userMessage + '</p>');
+        $('#user-input').val('');
 
-                $.ajax({
-                    url: '/chat',
-                    method: 'POST',
-                    contentType: 'application/json',
-                    data: JSON.stringify(requestData),
-                    success: function(response) {
-                        if (response.error) {
-                            $('#chat-box').append('<p class="error-message"><strong>Error:</strong> ' + response.error + '</p>');
-                        } else {
-                            if (response.system_prompt !== systemPrompt) {
-                                $('#system-prompt').val(response.system_prompt);
-                            }
-                            $('#chat-box').append('<pre class="ai-message"><strong>AI:</strong> ' + response.response + '</pre>');
-                        }
-                        $('#chat-box').scrollTop($('#chat-box')[0].scrollHeight);
-                    },
-                    error: function(jqXHR, textStatus, errorThrown) {
-                        $('#chat-box').append('<p class="error-message"><strong>Error:</strong> ' + errorThrown + '</p>');
+        var requestData = {
+            message: userMessage,
+            system_prompt: systemPrompt,
+            session_id: sessionId
+        };
+
+        $.ajax({
+            url: '/chat',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(requestData),
+            success: function(response) {
+                if (response.error) {
+                    $('#chat-box').append('<p class="error-message"><strong>Error:</strong> ' + response.error + '</p>');
+                } else {
+                    if (response.system_prompt !== systemPrompt) {
+                        $('#system-prompt').val(response.system_prompt);
                     }
-                });
-            }
-
-            $('#reset-chat').click(function() {
-                $.ajax({
-                    url: '/reset_chat',
-                    method: 'POST',
-                    contentType: 'application/json',
-                    success: function(response) {
-                        if (response.status === 'success') {
-                            $('#chat-box').empty();
-                            $('#chat-box').append('<p class="system-message"><strong>System:</strong> Chat history has been reset.</p>');
-                        } else {
-                            $('#chat-box').append('<p class="error-message"><strong>Error:</strong> ' + response.error + '</p>');
-                        }
-                        $('#chat-box').scrollTop($('#chat-box')[0].scrollHeight);
-                    },
-                    error: function(jqXHR, textStatus, errorThrown) {
-                        $('#chat-box').append('<p class="error-message"><strong>Error:</strong> ' + errorThrown + '</p>');
-                    }
-                });
-            });
-
-            $('#user-input').keypress(function(e) {
-                if (e.which == 13) {
-                    sendMessage();
-                    return false;
+                    $('#chat-box').append('<pre class="ai-message"><strong>AI:</strong> ' + response.response + '</pre>');
                 }
-            });
+                $('#chat-box').scrollTop($('#chat-box')[0].scrollHeight);
+            },
+            error: function(jqXHR, textStatus, errorThrown) {
+                $('#chat-box').append('<p class="error-message"><strong>Error:</strong> ' + errorThrown + '</p>');
+            }
         });
-    </script>
+    }
+
+    $('#user-input').keypress(function(e) {
+        if (e.which == 13) {
+            sendMessage();
+            return false;
+        }
+    });
+
+    $('#reset-chat').click(function() {
+        $.ajax({
+            url: '/reset_chat',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({session_id: sessionId}),
+            success: function(response) {
+                if (response.status === 'success') {
+                    $('#chat-box').empty();
+                    $('#chat-box').append('<p class="system-message"><strong>System:</strong> Chat history has been reset.</p>');
+                } else {
+                    $('#chat-box').append('<p class="error-message"><strong>Error:</strong> ' + response.error + '</p>');
+                }
+                $('#chat-box').scrollTop($('#chat-box')[0].scrollHeight);
+            },
+            error: function(jqXHR, textStatus, errorThrown) {
+                $('#chat-box').append('<p class="error-message"><strong>Error:</strong> ' + errorThrown + '</p>');
+            }
+        });
+    });
+});
+</script>
 </body>
 </html>
