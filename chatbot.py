@@ -16,14 +16,9 @@ logger = logging.getLogger(__name__)
 # Define context length
 CONTEXT_LENGTH = 8192
 
-# Initialize the model with the provided path, increased context length, and CUDA support
-model_path = r"F:\lmstudio\cognitivecomputations\dolphin-2.9-llama3-8b-gguf\dolphin-2.9-llama3-8b-q8_0.gguf"
-llm = Llama(
-    model_path=model_path,
-    n_ctx=CONTEXT_LENGTH,
-    n_gpu_layers=-1,  # This will offload all layers to GPU
-    verbose=True  # This will provide more information about CUDA usage
-)
+# Initialize the model with the provided path and increased context length
+model_path = r"F:\lmstudio\cognitivecomputations\dolphin-2.9-llama3-8b-gguf\dolphin-2.9-llama3-8b-q3_K_M.gguf"
+llm = Llama(model_path=model_path, n_ctx=CONTEXT_LENGTH)
 
 # Create Flask app
 app = Flask(__name__)
@@ -90,14 +85,7 @@ def generate_response(prompt, system_prompt, history):
     
     def generate():
         nonlocal full_prompt
-        output = llm(
-            full_prompt,
-            max_tokens=int(CONTEXT_LENGTH * 0.5),
-            echo=False,
-            stop=["### Human:"],
-            temperature=0.7,  # You can adjust this for more or less randomness in responses
-            top_p=0.9,  # You can adjust this to control the diversity of responses
-        )
+        output = llm(full_prompt, max_tokens=int(CONTEXT_LENGTH * 0.5), echo=False, stop=["### Human:"])
         return output['choices'][0]['text'].strip()
 
     queue = Queue()
@@ -189,5 +177,4 @@ def reset_chat():
 
 if __name__ == "__main__":
     logger.info("Starting the Flask application")
-    logger.info(f"CUDA is {'enabled' if llm.model.ctx.ctx_obj.options.use_gpu_inference else 'not enabled'}")
     app.run(host='0.0.0.0', port=5000)
