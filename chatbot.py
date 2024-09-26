@@ -10,6 +10,12 @@ from collections import defaultdict
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
+
+
+model_path = r"meta-llama/Llama-3.2-3B-Instruct"
+
+
+
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -17,8 +23,6 @@ logger = logging.getLogger(__name__)
 # Define context length
 CONTEXT_LENGTH = 8192
 
-# Initialize the model with the provided path and increased context length
-model_path = r"F:\lmstudio\cognitivecomputations\dolphin-2.9-llama3-8b-gguf\dolphin-2.9-llama3-8b-q3_K_M.gguf"
 
 # Load the tokenizer and model using Transformers
 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
@@ -117,7 +121,7 @@ def generate_response(prompt, system_prompt, history):
     thread.start()
 
     try:
-        response = queue.get(block=True, timeout=30)  # 30 second timeout
+        response = queue.get(block=True)
         logger.info(f"Response generated successfully. Length: {len(response)} characters")
 
         # Update conversation history
