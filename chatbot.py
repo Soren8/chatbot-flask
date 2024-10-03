@@ -4,7 +4,6 @@ import logging
 from flask import Flask, render_template, request, jsonify, Response
 import time
 import threading
-from queue import Queue, Empty
 from collections import defaultdict
 import requests
 import json
@@ -43,8 +42,13 @@ def clean_old_sessions():
 def generate_text_stream(prompt, system_prompt, model_name, session_history):
     url = "http://localhost:11434/api/generate"
 
-    # Prepare the conversation history in the format expected by Ollama
-    history_text = ""
+    # Prepare the conversation history with system prompt included
+    # Ensure the system prompt is only added once at the beginning
+    if not session_history:
+        history_text = f"### System: {system_prompt}\n\n"
+    else:
+        history_text = ""
+
     for user_input, assistant_response in session_history:
         history_text += f"### User:\n{user_input}\n\n### Assistant:\n{assistant_response}\n\n"
     # Append the latest user prompt
