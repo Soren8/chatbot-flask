@@ -40,7 +40,7 @@
             border-radius: 5px;
         }
         #chat-box {
-            height: 50vh;
+            height: calc(90vh);
             border: 1px solid #2c3e50;
             overflow-y: auto; /* Enables vertical scrolling */
             padding: 10px;
@@ -98,10 +98,13 @@
                 padding: 10px;
             }
             #chat-box {
-                height: 60vh;
+                height: 90vh; /* Adjust height for mobile screens */
             }
             #system-prompt, #user-input, #reset-chat {
                 font-size: 14px;
+            }
+            .message {
+                max-width: 100%; /* Allow messages to take full width on small screens */
             }
         }
     </style>
