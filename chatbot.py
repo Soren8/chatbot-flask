@@ -16,7 +16,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Ollama model name
-MODEL_NAME = "dolphin3.1-8b-q6"
+MODEL_NAME = "dolphin3.1-8b"
 
 # Create Flask app
 app = Flask(__name__)
