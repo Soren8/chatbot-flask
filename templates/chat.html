@@ -182,10 +182,6 @@
                         aiMessage += chunk;
                         aiMessageElement.innerHTML = '<strong>AI:</strong> ' + escapeHTML(aiMessage);
 
-                        // Automatically scroll to the bottom as new text arrives
-                        const chatBox = document.getElementById('chat-box');
-                        chatBox.scrollTop = chatBox.scrollHeight;
-
                         readStream();
                     }).catch(error => {
                         console.error('Error reading stream:', error);
