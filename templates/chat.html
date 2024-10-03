@@ -36,12 +36,13 @@
         #chat-box {
             height: 50vh;
             border: 1px solid #2c3e50;
-            overflow-y: scroll;
+            overflow-y: auto; /* Enables scrolling */
             padding: 10px;
             margin-bottom: 10px;
             box-sizing: border-box;
             display: flex;
-            flex-direction: column-reverse;
+            flex-direction: column; /* Natural order from top to bottom */
+            justify-content: flex-end; /* Aligns messages to the bottom */
             background-color: #1e2229;  /* Dark gray with a hint of blue */
         }
         #chat-content {
@@ -95,9 +96,14 @@
             messageElement.className = 'message ' + className;
             messageElement.innerHTML = message;
             const chatContent = document.getElementById('chat-content');
-            chatContent.insertBefore(messageElement, chatContent.firstChild);
+            chatContent.appendChild(messageElement); // Appends at the end
+
+            // Scroll to the bottom to show the latest message
             const chatBox = document.getElementById('chat-box');
-            chatBox.scrollTop = 0;
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            // Alternatively, use scrollIntoView for smooth scrolling
+            // messageElement.scrollIntoView({ behavior: 'smooth' });
         }
 
         function sendMessage() {
@@ -136,7 +142,7 @@
 
                 // Append initial AI message placeholder
                 appendMessage('<strong>AI:</strong> ', 'ai-message');
-                const aiMessageElement = document.querySelector('.ai-message');
+                const aiMessageElement = document.querySelector('.ai-message:last-child');
 
                 function readStream() {
                     reader.read().then(({ done, value }) => {
