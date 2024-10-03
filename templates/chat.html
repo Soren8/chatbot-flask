@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>AI Chat</title>
     <style>
         body {
@@ -22,6 +21,10 @@
             background-color: #1e2229;  /* Dark gray with a hint of blue */
             color: #d0d0d0;  /* Light grey text */
             border: 1px solid #2c3e50;
+            resize: none;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 16px;
         }
         #reset-chat {
             display: block;
@@ -32,18 +35,20 @@
             color: #d0d0d0;  /* Light grey text */
             border: none;
             cursor: pointer;
+            font-size: 16px;
+            border-radius: 5px;
         }
         #chat-box {
             height: 50vh;
             border: 1px solid #2c3e50;
-            overflow-y: auto; /* Enables scrolling */
+            overflow-y: auto; /* Enables vertical scrolling */
             padding: 10px;
             margin-bottom: 10px;
             box-sizing: border-box;
             display: flex;
-            flex-direction: column; /* Natural order from top to bottom */
-            justify-content: flex-end; /* Aligns messages to the bottom */
+            flex-direction: column; /* Natural top-to-bottom order */
             background-color: #1e2229;  /* Dark gray with a hint of blue */
+            border-radius: 5px;
         }
         #chat-content {
             display: flex;
@@ -56,24 +61,46 @@
             background-color: #1e2229;  /* Dark gray with a hint of blue */
             color: #d0d0d0;  /* Light grey text */
             border: 1px solid #2c3e50;
+            border-radius: 5px;
+            font-size: 16px;
         }
         .message {
             margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            max-width: 80%;
+            word-wrap: break-word;
+            white-space: pre-wrap; /* Preserves newlines and whitespace */
         }
-        .user-message, .ai-message {
-            color: #d0d0d0;  /* Light grey for both user and AI messages */
+        .user-message {
+            background-color: #3a3a3a; /* Slightly lighter gray for user messages */
+            align-self: flex-end; /* Right-justified */
+            text-align: right;
         }
         .ai-message {
-            white-space: pre-wrap;
-            word-wrap: break-word;
+            background-color: #2c3e50; /* Dark blue-gray for AI messages */
+            align-self: flex-start; /* Left-justified */
+            text-align: left;
         }
-        .error-message { color: #e06a6a; }  /* Light red for error messages */
+        .error-message { 
+            color: #e06a6a;  /* Light red for error messages */
+            font-weight: bold;
+        }
+        .system-message {
+            background-color: #555555; /* Medium gray for system messages */
+            align-self: center;
+            font-style: italic;
+            text-align: center;
+        }
         @media (max-width: 600px) {
             body {
                 padding: 10px;
             }
             #chat-box {
                 height: 60vh;
+            }
+            #system-prompt, #user-input, #reset-chat {
+                font-size: 14px;
             }
         }
     </style>
@@ -89,7 +116,8 @@
     <script>
     document.addEventListener('DOMContentLoaded', function() {
         // Generate a new session ID every time the page loads
-        var sessionId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        var sessionId = Math.random().toString(36).substring(2, 15) + 
+                        Math.random().toString(36).substring(2, 15);
 
         function appendMessage(message, className) {
             const messageElement = document.createElement('div');
@@ -98,12 +126,9 @@
             const chatContent = document.getElementById('chat-content');
             chatContent.appendChild(messageElement); // Appends at the end
 
-            // Scroll to the bottom to show the latest message
+            // Automatically scroll to the bottom to show the latest message
             const chatBox = document.getElementById('chat-box');
             chatBox.scrollTop = chatBox.scrollHeight;
-
-            // Alternatively, use scrollIntoView for smooth scrolling
-            // messageElement.scrollIntoView({ behavior: 'smooth' });
         }
 
         function sendMessage() {
@@ -134,7 +159,9 @@
             })
             .then(response => {
                 if (!response.ok) {
-                    return response.text().then(text => { throw new Error(text || 'Network response was not ok'); });
+                    return response.text().then(text => { 
+                        throw new Error(text || 'Network response was not ok'); 
+                    });
                 }
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder('utf-8');
@@ -142,7 +169,8 @@
 
                 // Append initial AI message placeholder
                 appendMessage('<strong>AI:</strong> ', 'ai-message');
-                const aiMessageElement = document.querySelector('.ai-message:last-child');
+                const aiMessageElements = document.getElementsByClassName('ai-message');
+                const aiMessageElement = aiMessageElements[aiMessageElements.length - 1];
 
                 function readStream() {
                     reader.read().then(({ done, value }) => {
@@ -152,10 +180,16 @@
                         const chunk = decoder.decode(value, { stream: true });
                         aiMessage += chunk;
                         aiMessageElement.innerHTML = '<strong>AI:</strong> ' + escapeHTML(aiMessage);
+
+                        // Automatically scroll to the bottom as new text arrives
+                        const chatBox = document.getElementById('chat-box');
+                        chatBox.scrollTop = chatBox.scrollHeight;
+
                         readStream();
                     }).catch(error => {
                         console.error('Error reading stream:', error);
-                        aiMessageElement.innerHTML += '<br/><span class="error-message">[Error] An error occurred while fetching the response.</span>';
+                        aiMessageElement.innerHTML += 
+                            '<br/><span class="error-message">[Error] An error occurred while fetching the response.</span>';
                     });
                 }
 
