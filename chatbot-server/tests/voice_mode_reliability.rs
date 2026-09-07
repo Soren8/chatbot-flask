@@ -1444,4 +1444,70 @@ fn desktop_voice_tts_queues_audio_ahead_and_prevents_mid_sentence_cutoffs() {
     );
 }
 
+#[test]
+fn manual_tts_play_in_voice_mode_reliably_coexists_on_android_and_desktop() {
+    let chat_js = include_str!("../../static/chat.js");
+    let plugin = include_str!(
+        "../../android/app/src/main/java/com/chatbot/app/NativeVoiceTts/NativeVoiceTtsPlugin.java"
+    );
+
+    // 1. Android NativeVoiceTtsPlugin tracks generation and cancels workers promptly
+    assert!(
+        plugin.contains("ret.put(\"generation\", gen)")
+            || plugin.contains("ret.put(\"generation\", playbackGeneration.get())"),
+        "beginSession must return generation to tie playbackState events to the active session"
+    );
+    assert!(
+        plugin.contains("ret.put(\"generation\", generation)"),
+        "notifyStarted and notifySessionEnded must pass session generation"
+    );
+    let stop_internal = java_method_body(plugin, "private void stopPlaybackInternal(")
+        .expect("stopPlaybackInternal must be declared");
+    assert!(
+        stop_internal.contains("t.interrupt()") && stop_internal.contains("dt.interrupt()"),
+        "stopPlaybackInternal must interrupt worker and downloader threads so stop is prompt"
+    );
+
+    // 2. Chat.js playNativeVoiceModeTts filters stale ended events and resets pre-click VAD state
+    let native_tts = function_body(chat_js, "playNativeVoiceModeTts")
+        .expect("playNativeVoiceModeTts must be declared");
+    assert!(
+        native_tts.contains("onTtsPlaybackStarted") || native_tts.contains("resetSpeechCounters"),
+        "playNativeVoiceModeTts must reset mic VAD speech state on start so pre-click noise does not immediately barge-in"
+    );
+    assert!(
+        native_tts.contains("voiceSttAbortController.abort"),
+        "playNativeVoiceModeTts must abort in-flight voice STT so stale utterances cannot disrupt playback"
+    );
+    assert!(
+        native_tts.contains("nativeStarted") || native_tts.contains("nativeSessionGen"),
+        "playNativeVoiceModeTts must filter out stale ended events that arrive before playback starts"
+    );
+
+    // 3. Chat.js desktop playTTS resets bargeInFrames and aborts in-flight STT
+    let desktop_tts = function_body(chat_js, "playTTS")
+        .expect("playTTS must be declared");
+    assert!(
+        desktop_tts.contains("bargeInFrames = 0"),
+        "desktop playTTS must reset bargeInFrames on start"
+    );
+    assert!(
+        desktop_tts.contains("voiceSttAbortController.abort"),
+        "desktop playTTS must abort in-flight voice STT"
+    );
+
+    // 4. isStillGenerating checks message-specific generating status, not global abort controller
+    let desktop_body = function_body(chat_js, "playMessageBodyTts")
+        .expect("playMessageBodyTts must be declared");
+    assert!(
+        desktop_body.contains("regenerate-button"),
+        "playMessageBodyTts isStillGenerating must check regenerate-button/last-message to avoid falsely stalling completed messages"
+    );
+    assert!(
+        native_tts.contains("regenerate-button"),
+        "playNativeVoiceModeTts isStillGenerating must check regenerate-button/last-message to avoid falsely stalling completed messages"
+    );
+}
+
+
 

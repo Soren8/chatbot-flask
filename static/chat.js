@@ -2560,7 +2560,10 @@ function playMessageBodyTts(sessionId, button, $messageElement) {
 
   function isStillGenerating() {
     const currentRawText = $messageElement.find('.ai-message-text').text().trim();
-    return currentRawText === 'Thinking...' || (currentAbortController !== null);
+    if (currentRawText === 'Thinking...') return true;
+    const isLastAi = $messageElement.is($('#chat-content .message.ai-message').last());
+    const regenDisabled = $messageElement.find('.regenerate-button').prop('disabled');
+    return isLastAi && regenDisabled && (currentAbortController !== null);
   }
 
   function discoverAbsolute() {
@@ -2725,6 +2728,11 @@ window.playTTS = function playTTS(button, options) {
   };
   CURRENT_AUDIO_BUTTON = button;
   if (window.voiceModeActive) {
+    bargeInFrames = 0;
+    if (voiceSttAbortController) {
+      try { voiceSttAbortController.abort(); } catch (e) { /* ignore */ }
+      voiceSttAbortController = null;
+    }
     voiceModeTtsSessionActive = true;
     if (typeof syncSendButtonState === 'function') {
       syncSendButtonState();
@@ -4819,8 +4827,13 @@ $(document).ready(function() {
   function invalidateNativeVoiceTts() {
     nativeVoiceTtsGeneration += 1;
     if (nativeVoiceTtsSessionListener) {
-      try { nativeVoiceTtsSessionListener.remove(); } catch (e) { /* ignore */ }
+      const listener = nativeVoiceTtsSessionListener;
       nativeVoiceTtsSessionListener = null;
+      Promise.resolve(listener).then(function (handle) {
+        if (handle && typeof handle.remove === 'function') {
+          handle.remove();
+        }
+      }).catch(function () {});
     }
     nativeVoiceTtsSessionPromise = null;
   }
@@ -4837,8 +4850,13 @@ $(document).ready(function() {
       clearMessageTtsPlayingUi();
     }
     if (nativeVoiceTtsSessionListener) {
-      try { nativeVoiceTtsSessionListener.remove(); } catch (e) { /* ignore */ }
+      const listener = nativeVoiceTtsSessionListener;
       nativeVoiceTtsSessionListener = null;
+      Promise.resolve(listener).then(function (handle) {
+        if (handle && typeof handle.remove === 'function') {
+          handle.remove();
+        }
+      }).catch(function () {});
     }
     nativeVoiceTtsSessionPromise = null;
     armTtsListenCooldown();
@@ -4860,6 +4878,16 @@ $(document).ready(function() {
     invalidateNativeVoiceTts();
     const nativeVoiceTtsStopPromise = window.NativeVoiceTts.stop().catch(function () {});
     stopCurrentDesktopTts();
+
+    // Reset VAD state immediately so pre-click speech/room noise cannot trigger false barge-in
+    if (nativeMicBridge && typeof nativeMicBridge.onTtsPlaybackStarted === 'function') {
+      nativeMicBridge.onTtsPlaybackStarted();
+    }
+    // Abort any in-flight voice STT so stale utterances cannot disrupt playback
+    if (voiceSttAbortController) {
+      try { voiceSttAbortController.abort(); } catch (e) { /* ignore */ }
+      voiceSttAbortController = null;
+    }
 
     const generation = nativeVoiceTtsGeneration;
     const voiceTtsAbortController = new AbortController();
@@ -4903,7 +4931,10 @@ $(document).ready(function() {
 
     function isStillGenerating() {
       const raw = $messageElement.find('.ai-message-text').text().trim();
-      return raw === 'Thinking...' || currentAbortController !== null;
+      if (raw === 'Thinking...') return true;
+      const isLastAi = $messageElement.is($('#chat-content .message.ai-message').last());
+      const regenDisabled = $messageElement.find('.regenerate-button').prop('disabled');
+      return isLastAi && regenDisabled && currentAbortController !== null;
     }
 
     function discoverSentences() {
@@ -4924,13 +4955,21 @@ $(document).ready(function() {
       nativeVoiceTtsSessionPromise = nativeVoiceTtsStopPromise.then(function () {
         if (!live()) return null;
         return window.NativeVoiceTts.beginSession();
-      }).then(function () {
+      }).then(function (res) {
         if (!live()) return;
+        const nativeSessionGen = (res && res.generation) || 0;
+        let nativeStarted = false;
         nativeVoiceTtsSessionListener = window.NativeVoiceTts.addListener('playbackState', function (data) {
           if (!data || generation !== nativeVoiceTtsGeneration) return;
+          if (nativeSessionGen && data.generation && data.generation !== nativeSessionGen) return;
           if (data.type === 'started') {
+            nativeStarted = true;
             onVoiceModeTtsStarted();
           } else if (data.type === 'ended') {
+            if (!nativeStarted && !endRequested) {
+              // Stale ended event from prior stopped session before this session began playing
+              return;
+            }
             finishNativeVoiceTts(generation, button);
           } else if (data.type === 'error') {
             console.error('Native voice TTS error:', data.message);

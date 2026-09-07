@@ -108,8 +108,11 @@ public class NativeVoiceTtsPlugin extends Plugin {
         playbackStartedNotified.set(false);
         bytesWritten.set(0);
         sessionActive.set(true);
-        startWorker(playbackGeneration.incrementAndGet());
-        call.resolve();
+        long gen = playbackGeneration.incrementAndGet();
+        startWorker(gen);
+        JSObject ret = new JSObject();
+        ret.put("generation", gen);
+        call.resolve(ret);
     }
 
     @PluginMethod
@@ -151,8 +154,11 @@ public class NativeVoiceTtsPlugin extends Plugin {
         sessionActive.set(true);
         urlQueue.offer(url.trim());
         endOfQueueMarked.set(true);
-        startWorker(playbackGeneration.incrementAndGet());
-        call.resolve();
+        long gen = playbackGeneration.incrementAndGet();
+        startWorker(gen);
+        JSObject ret = new JSObject();
+        ret.put("generation", gen);
+        call.resolve(ret);
     }
 
     @PluginMethod
@@ -184,7 +190,7 @@ public class NativeVoiceTtsPlugin extends Plugin {
                         if (!isGenerationActive(generation)) {
                             return;
                         }
-                        notifySessionEnded();
+                        notifySessionEnded(generation);
                         stopPlaybackInternal(false);
                         return;
                     }
@@ -356,7 +362,7 @@ public class NativeVoiceTtsPlugin extends Plugin {
         if (!isGenerationActive(generation)) {
             return;
         }
-        AudioTrack track = ensureTrackPlaying(sampleRate);
+        AudioTrack track = ensureTrackPlaying(sampleRate, generation);
         writePcmBlocking(track, pcm, generation);
     }
 
@@ -534,7 +540,7 @@ public class NativeVoiceTtsPlugin extends Plugin {
         am.requestAudioFocus(req);
     }
 
-    private AudioTrack ensureTrackPlaying(int sampleRate) {
+    private AudioTrack ensureTrackPlaying(int sampleRate, long generation) {
         requestAudioFocus();
         AudioTrack track = audioTrack;
         if (track != null && trackSampleRate == sampleRate) {
@@ -576,7 +582,7 @@ public class NativeVoiceTtsPlugin extends Plugin {
         bytesWritten.set(0);
         track.play();
         if (playbackStartedNotified.compareAndSet(false, true)) {
-            notifyStarted();
+            notifyStarted(generation);
         }
         return track;
     }
@@ -622,7 +628,7 @@ public class NativeVoiceTtsPlugin extends Plugin {
         // on the listener of a session begun right after it (cold app start
         // after a relaunch) and kill that session at birth.
         boolean wasActive = sessionActive.getAndSet(false);
-        playbackGeneration.incrementAndGet();
+        long stoppedGen = playbackGeneration.incrementAndGet();
         stopRequested.set(true);
         endOfQueueMarked.set(false);
         urlQueue.clear();
@@ -651,6 +657,7 @@ public class NativeVoiceTtsPlugin extends Plugin {
 
         Thread t = workerThread;
         if (t != null && t != Thread.currentThread()) {
+            t.interrupt();
             try {
                 t.join(1500);
             } catch (InterruptedException e) {
@@ -661,6 +668,7 @@ public class NativeVoiceTtsPlugin extends Plugin {
 
         Thread dt = downloaderThread;
         if (dt != null && dt != Thread.currentThread()) {
+            dt.interrupt();
             try {
                 dt.join(1500);
             } catch (InterruptedException e) {
@@ -697,22 +705,29 @@ public class NativeVoiceTtsPlugin extends Plugin {
         }
     }
 
-    private void notifyStarted() {
+    private void notifyStarted(long generation) {
         JSObject ret = new JSObject();
         ret.put("type", "started");
+        ret.put("generation", generation);
         notifyListeners("playbackState", ret);
     }
 
     private void notifySessionEnded() {
+        notifySessionEnded(playbackGeneration.get());
+    }
+
+    private void notifySessionEnded(long generation) {
         JSObject ret = new JSObject();
         ret.put("type", "ended");
+        ret.put("generation", generation);
         notifyListeners("playbackState", ret);
     }
 
-    private void notifyError(String message) {
+    private void notifyError(String message, long generation) {
         JSObject ret = new JSObject();
         ret.put("type", "error");
         ret.put("message", message);
+        ret.put("generation", generation);
         notifyListeners("playbackState", ret);
     }
 
