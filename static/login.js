@@ -398,13 +398,23 @@ $(function() {
         return;
       }
       const rememberChecked = $('#remember_me').is(':checked');
-      if (window.NativeBridge && window.NativeBridge.isNativePlatform() && rememberChecked) {
-        try {
-          await window.NativeBridge.callNativePlugin('NativeSecureKey', 'sealCachedCredentials', {
-            account: username,
-          });
-        } catch (e) {
-          console.debug('failed to seal cached credentials in keystore', e);
+      if (window.NativeBridge && window.NativeBridge.isNativePlatform()) {
+        if (rememberChecked) {
+          try {
+            await window.NativeBridge.callNativePlugin('NativeSecureKey', 'sealCachedCredentials', {
+              account: username,
+            });
+          } catch (e) {
+            console.debug('failed to seal cached credentials in keystore', e);
+          }
+        } else {
+          try {
+            await window.NativeBridge.callNativePlugin('NativeSecureKey', 'clearKey', {
+              account: username,
+            });
+          } catch (e) {
+            console.debug('failed to clear unchecked credentials in keystore', e);
+          }
         }
       }
       try {

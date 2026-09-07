@@ -248,6 +248,9 @@
         if (!entry.value || typeof entry.value !== 'object' || !entry.value.wrapped) {
           continue;
         }
+        if (entry.value.mode === 'webauthn-prf') {
+          continue;
+        }
         const next = {
           mode: 'cookie',
           remembered: entry.value.remembered !== false,

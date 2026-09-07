@@ -1318,3 +1318,251 @@ async fn home_auto_restore_promotes_account_enc_key_cookie() {
         "GET / restore must copy enc_key-{{user}} onto last-used enc_key"
     );
 }
+
+#[tokio::test]
+async fn multi_account_modifying_one_does_not_clobber_other() {
+    common::init_tracing();
+    let _guard = test_mutex().lock().unwrap();
+    let _workspace = setup_workspace();
+    let alice = "alice_clobber";
+    let bob = "bob_clobber";
+    let password = "Sup3rS3cret!";
+    seed_user(alice, password);
+    seed_user(bob, password);
+    register_verifier(alice, password);
+    register_verifier(bob, password);
+    let alice_key = derive_key_b64(alice, password);
+    let bob_key = derive_key_b64(bob, password);
+    assert_ne!(alice_key, bob_key);
+
+    let app = build_app();
+
+    // 1. Alice logs in with remember_me: true
+    let (csrf, cookies) = get_login_page(&app, None).await;
+    let guest = find_cookie_pair(&cookies, "session").expect("guest session");
+    let alice_login = post_login(&app, &guest, &csrf, alice, password, true).await;
+    assert_eq!(alice_login.status(), StatusCode::FOUND);
+    let alice_cookies = set_cookie_values(alice_login.headers());
+    let alice_remember = find_cookie_pair(&alice_cookies, "remember").expect("alice remember");
+    let alice_acct_remember =
+        find_cookie_pair(&alice_cookies, &format!("remember-{alice}")).expect("alice acct remember");
+    let alice_enc = find_cookie_pair(&alice_cookies, "enc_key").expect("alice enc_key");
+    let alice_acct_enc =
+        find_cookie_pair(&alice_cookies, &format!("enc_key-{alice}")).expect("alice acct enc_key");
+
+    // 2. Bob logs in on the same browser (Cookie header contains Alice's cookies)
+    let (csrf, cookies) = get_login_page(&app, Some(&format!("{alice_remember}; {alice_acct_remember}"))).await;
+    let guest = find_cookie_pair(&cookies, "session").expect("guest session");
+    let bob_login = post_login(
+        &app,
+        &format!("{guest}; {alice_remember}; {alice_acct_remember}; {alice_enc}; {alice_acct_enc}"),
+        &csrf,
+        bob,
+        password,
+        true,
+    )
+    .await;
+    assert_eq!(bob_login.status(), StatusCode::FOUND);
+    let bob_cookies = set_cookie_values(bob_login.headers());
+    let bob_remember = find_cookie_pair(&bob_cookies, "remember").expect("bob remember");
+    let bob_acct_remember =
+        find_cookie_pair(&bob_cookies, &format!("remember-{bob}")).expect("bob acct remember");
+    let bob_enc = find_cookie_pair(&bob_cookies, "enc_key").expect("bob enc_key");
+    let bob_acct_enc =
+        find_cookie_pair(&bob_cookies, &format!("enc_key-{bob}")).expect("bob acct enc_key");
+
+    // Browser now holds both accounts' credentials. Generic remember and enc_key belong to Bob.
+    let shared_cookie_jar = format!(
+        "{bob_remember}; {bob_acct_remember}; {bob_enc}; {bob_acct_enc}; {alice_acct_remember}; {alice_acct_enc}"
+    );
+
+    // 3. Alice switches back to her account via POST /login/remember presenting the shared jar
+    let (csrf, cookies) = get_login_page(&app, Some(&shared_cookie_jar)).await;
+    let guest = find_cookie_pair(&cookies, "session").expect("guest session");
+    let restore = post_remember_login_as(
+        &app,
+        &format!("{guest}; {shared_cookie_jar}"),
+        &csrf,
+        alice,
+        None,
+    )
+    .await;
+    assert_eq!(restore.status(), StatusCode::OK, "alice restore must succeed");
+    let restored_cookies = set_cookie_values(restore.headers());
+    let alice_new_enc = find_cookie_pair(&restored_cookies, "enc_key").expect("restored enc_key");
+    let alice_expected_enc = format!("enc_key={}", urlencoding::encode(&alice_key));
+    assert_eq!(
+        alice_new_enc, alice_expected_enc,
+        "restoring alice must promote alice's enc_key, not keep or inherit bob's enc_key"
+    );
+
+    // 4. Test promote_enc_key_cookies directly when generic enc_key has Bob's key but username is Alice
+    let promoted = chatbot_server::chat_utils::promote_enc_key_cookies(
+        Some(&format!("{bob_enc}; {alice_acct_enc}")),
+        alice,
+    );
+    assert!(
+        promoted.iter().any(|c| c.starts_with(&format!("{alice_expected_enc};"))),
+        "promote_enc_key_cookies must overwrite bob's stale enc_key with alice's verified key"
+    );
+
+    // 5. Test extract_enc_key when session belongs to Alice but generic enc_key has Bob's key
+    let finalize = session::finalize_login(None, alice).expect("alice session");
+    let alice_session_cookie = cookie_pair(&finalize.set_cookie);
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert(
+        header::COOKIE,
+        format!("{alice_session_cookie}; {bob_enc}; {alice_acct_enc}; {bob_acct_enc}")
+            .parse()
+            .unwrap(),
+    );
+    let extracted = chatbot_server::chat_utils::extract_enc_key(&headers).expect("extract_enc_key");
+    assert_eq!(
+        std::str::from_utf8(extracted.as_bytes()).unwrap(),
+        alice_key,
+        "extract_enc_key for alice's session must return alice's account key even if generic enc_key is bob's"
+    );
+}
+
+#[tokio::test]
+async fn multi_account_unremembered_login_does_not_inherit_remember_or_clobber_other() {
+    common::init_tracing();
+    let _guard = test_mutex().lock().unwrap();
+    let _workspace = setup_workspace();
+    let alice = "alice_unrem";
+    let bob = "bob_unrem";
+    let password = "Sup3rS3cret!";
+    seed_user(alice, password);
+    seed_user(bob, password);
+    register_verifier(alice, password);
+    register_verifier(bob, password);
+    let alice_key = derive_key_b64(alice, password);
+    let _bob_key = derive_key_b64(bob, password);
+
+    let app = build_app();
+
+    // Alice logs in with remember_me: true
+    let (csrf, cookies) = get_login_page(&app, None).await;
+    let guest = find_cookie_pair(&cookies, "session").expect("guest session");
+    let alice_login = post_login(&app, &guest, &csrf, alice, password, true).await;
+    assert_eq!(alice_login.status(), StatusCode::FOUND);
+    let alice_cookies = set_cookie_values(alice_login.headers());
+    let alice_remember = find_cookie_pair(&alice_cookies, "remember").expect("alice remember");
+    let alice_acct_enc =
+        find_cookie_pair(&alice_cookies, &format!("enc_key-{alice}")).expect("alice acct enc");
+
+    // Bob logs in without remember_me (remember_me: false) while Alice's cookies are in the browser
+    let (csrf, cookies) = get_login_page(&app, Some(&alice_remember)).await;
+    let guest = find_cookie_pair(&cookies, "session").expect("guest session");
+    let bob_login = post_login(
+        &app,
+        &format!("{guest}; {alice_remember}; {alice_acct_enc}"),
+        &csrf,
+        bob,
+        password,
+        false,
+    )
+    .await;
+    assert_eq!(bob_login.status(), StatusCode::FOUND);
+    let bob_cookies = set_cookie_values(bob_login.headers());
+    let bob_enc = find_cookie_pair(&bob_cookies, "enc_key").expect("bob session enc_key");
+    for cookie in bob_cookies
+        .iter()
+        .filter(|c| c.starts_with(&format!("remember-{bob}=")))
+    {
+        assert!(
+            cookie.contains("Max-Age=0"),
+            "unremembered bob must not get an active remember token, got {cookie}"
+        );
+    }
+
+    // promote_enc_key_cookies for Bob must NOT treat Bob as remembered just because Alice's remember cookie exists
+    let promoted_bob = chatbot_server::chat_utils::promote_enc_key_cookies(
+        Some(&format!("{bob_enc}; {alice_remember}")),
+        bob,
+    );
+    assert!(
+        !promoted_bob.iter().any(|c| c.starts_with(&format!("enc_key-{bob}="))),
+        "unremembered bob must not get per-account enc_key cookie promoted from alice's remember cookie"
+    );
+
+    // When Alice returns to /, promote_enc_key_cookies must restore Alice's enc_key over Bob's enc_key
+    let promoted_alice = chatbot_server::chat_utils::promote_enc_key_cookies(
+        Some(&format!("{alice_remember}; {alice_acct_enc}; {bob_enc}")),
+        alice,
+    );
+    let alice_expected_enc = format!("enc_key={}", urlencoding::encode(&alice_key));
+    assert!(
+        promoted_alice.iter().any(|c| c.starts_with(&format!("{alice_expected_enc};"))),
+        "alice must get her enc_key promoted over bob's unremembered enc_key"
+    );
+}
+
+#[tokio::test]
+async fn forget_expired_or_revoked_account_clears_cookies_without_affecting_other() {
+    common::init_tracing();
+    let _guard = test_mutex().lock().unwrap();
+    let _workspace = setup_workspace();
+    let alice = "alice_forget_safe";
+    let bob = "bob_forget_safe";
+    let password = "Sup3rS3cret!";
+    seed_user(alice, password);
+    seed_user(bob, password);
+
+    let app = build_app();
+
+    // Alice logs in with remember
+    let (_alice_session, alice_remember) = login_with_remember(&app, alice, password).await;
+    let alice_acct_remember = format!("remember-{alice}=dummy_token");
+    let alice_acct_enc = format!("enc_key-{alice}=dummy_key");
+
+    // Client sends POST /login/forget for Bob who has NO active remember token in the store
+    let (csrf, cookies) = get_login_page(&app, Some(&alice_remember)).await;
+    let guest = find_cookie_pair(&cookies, "session").expect("guest session");
+    let bob_acct_remember = format!("remember-{bob}=expired_token");
+    let bob_acct_enc = format!("enc_key-{bob}=expired_key");
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/login/forget")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(
+                    header::COOKIE,
+                    format!("{guest}; {alice_remember}; {alice_acct_remember}; {alice_acct_enc}; {bob_acct_remember}; {bob_acct_enc}"),
+                )
+                .body(Body::from(format!(
+                    "csrf_token={}&username={}",
+                    urlencoding::encode(&csrf),
+                    urlencoding::encode(bob)
+                )))
+                .unwrap(),
+        )
+        .await
+        .expect("POST /login/forget bob");
+    assert_eq!(response.status(), StatusCode::OK);
+    let cookies = set_cookie_values(response.headers());
+
+    // Bob's cookies must be cleared even if revoked was false
+    assert!(
+        cookies.iter().any(|c| c.starts_with(&format!("remember-{bob}=")) && c.contains("Max-Age=0")),
+        "forgetting bob must clear remember-bob cookie even if token was not in store"
+    );
+    assert!(
+        cookies.iter().any(|c| c.starts_with(&format!("enc_key-{bob}=")) && c.contains("Max-Age=0")),
+        "forgetting bob must clear enc_key-bob cookie even if token was not in store"
+    );
+
+    // Alice's last-used remember and enc_key cookies must NOT be cleared
+    assert!(
+        !cookies.iter().any(|c| c.starts_with("remember=")),
+        "forgetting bob must not clear alice's remember cookie"
+    );
+    assert!(
+        !cookies.iter().any(|c| c.starts_with("enc_key=")),
+        "forgetting bob must not clear alice's enc_key cookie"
+    );
+}
+

@@ -247,10 +247,10 @@ public class NativeSecureKeyPlugin extends Plugin {
                     if (kv.length == 2) {
                         String k = kv[0].trim();
                         String v = kv[1].trim();
-                        if (k.equals(rememberKey) || (rememberVal == null && k.equals("remember"))) {
+                        if (k.equals(rememberKey)) {
                             rememberVal = v;
                         }
-                        if (k.equals(encKeyName) || (encKeyVal == null && k.equals("enc_key"))) {
+                        if (k.equals(encKeyName)) {
                             encKeyVal = v;
                         }
                     }

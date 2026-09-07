@@ -163,9 +163,19 @@ pub async fn handle_login_post(
     }
 
     if remember_me {
+        let account_tok = remember_store::extract_account_token(cookie_header.as_deref(), &username);
+        let presented = account_tok.or_else(|| {
+            let last = remember_store::extract_token(cookie_header.as_deref())?;
+            let store = remember_store::RememberStore::new().ok()?;
+            if store.peek_username(Some(&last)).as_deref() == Some(username.as_str()) {
+                Some(last)
+            } else {
+                None
+            }
+        });
         match issue_remember_cookies(
             &username,
-            remember_store::extract_token_for_user(cookie_header.as_deref(), &username).as_deref(),
+            presented.as_deref(),
         ) {
             Ok(set_cookies) => {
                 for set_cookie in set_cookies {
@@ -185,11 +195,10 @@ pub async fn handle_login_post(
         // Unchecked "remember this computer": revoke this account's family only.
         let last = remember_store::extract_token(cookie_header.as_deref());
         let account = remember_store::extract_account_token(cookie_header.as_deref(), &username);
-        let last_belongs = remember_store::RememberStore::new()
-            .ok()
-            .and_then(|store| store.peek_username(last.as_deref()))
-            .as_deref()
-            == Some(username.as_str());
+        let last_belongs = match remember_store::RememberStore::new() {
+            Ok(store) => store.peek_username(last.as_deref()).as_deref() == Some(username.as_str()),
+            Err(_) => false,
+        } || (account.is_some() && account == last);
         if let Ok(store) = remember_store::RememberStore::new() {
             store.revoke(account.as_deref());
             if last_belongs {
@@ -324,12 +333,6 @@ pub async fn handle_login_remember_post(
         },
         None => None,
     };
-    let presented = match requested_username.as_deref() {
-        Some(username) => {
-            remember_store::extract_token_for_user(cookie_header.as_deref(), username)
-        }
-        None => remember_store::extract_token(cookie_header.as_deref()),
-    };
     let store = remember_store::RememberStore::new().map_err(|err| {
         log_and_api_error(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -338,6 +341,21 @@ pub async fn handle_login_remember_post(
             err,
         )
     })?;
+    let presented = match requested_username.as_deref() {
+        Some(username) => {
+            let account_tok =
+                remember_store::extract_account_token(cookie_header.as_deref(), username);
+            account_tok.or_else(|| {
+                let last = remember_store::extract_token(cookie_header.as_deref())?;
+                if store.peek_username(Some(&last)).as_deref() == Some(username) {
+                    Some(last)
+                } else {
+                    None
+                }
+            })
+        }
+        None => remember_store::extract_token(cookie_header.as_deref()),
+    };
     if let Some(requested) = requested_username.as_deref() {
         match store.peek_username(presented.as_deref()) {
             Some(bound) if bound == requested => {}
@@ -477,13 +495,9 @@ pub async fn handle_login_forget_post(
     };
 
     let last = remember_store::extract_token(cookie_header.as_deref());
-    let presented = remember_store::extract_token_for_user(cookie_header.as_deref(), &username);
-    let last_belongs = match remember_store::RememberStore::new() {
-        Ok(store) => store.peek_username(last.as_deref()).as_deref() == Some(username.as_str()),
-        Err(_) => false,
-    };
-    let revoked = match remember_store::RememberStore::new() {
-        Ok(store) => store.revoke_if_username(presented.as_deref(), &username),
+    let account = remember_store::extract_account_token(cookie_header.as_deref(), &username);
+    let store = match remember_store::RememberStore::new() {
+        Ok(store) => store,
         Err(err) => {
             return Err(log_and_api_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -493,6 +507,10 @@ pub async fn handle_login_forget_post(
             ));
         }
     };
+    let last_belongs = store.peek_username(last.as_deref()).as_deref() == Some(username.as_str())
+        || (account.is_some() && account == last);
+    let presented = account.or_else(|| if last_belongs { last.clone() } else { None });
+    let revoked = store.revoke_if_username(presented.as_deref(), &username);
 
     let payload = serde_json::to_vec(&json!({
         "ok": true,
@@ -513,26 +531,24 @@ pub async fn handle_login_forget_post(
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/json"),
         );
-    if revoked {
-        if let Ok(value) =
-            HeaderValue::from_str(&remember_store::build_account_clear_cookie(&username))
-        {
+    if let Ok(value) =
+        HeaderValue::from_str(&remember_store::build_account_clear_cookie(&username))
+    {
+        builder = builder.header(header::SET_COOKIE, value);
+    }
+    if let Ok(value) =
+        HeaderValue::from_str(&crate::chat_utils::build_enc_key_account_clear_cookie(&username))
+    {
+        builder = builder.header(header::SET_COOKIE, value);
+    }
+    if last_belongs {
+        if let Ok(value) = HeaderValue::from_str(&remember_store::build_clear_cookie()) {
             builder = builder.header(header::SET_COOKIE, value);
         }
         if let Ok(value) =
-            HeaderValue::from_str(&crate::chat_utils::build_enc_key_account_clear_cookie(&username))
+            HeaderValue::from_str(&crate::chat_utils::build_enc_key_clear_cookie())
         {
             builder = builder.header(header::SET_COOKIE, value);
-        }
-        if last_belongs {
-            if let Ok(value) = HeaderValue::from_str(&remember_store::build_clear_cookie()) {
-                builder = builder.header(header::SET_COOKIE, value);
-            }
-            if let Ok(value) =
-                HeaderValue::from_str(&crate::chat_utils::build_enc_key_clear_cookie())
-            {
-                builder = builder.header(header::SET_COOKIE, value);
-            }
         }
     }
 

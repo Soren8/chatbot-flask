@@ -14,7 +14,7 @@ The `tests` service caps CPU pressure at half the physical cores (`CARGO_BUILD_J
 
 **One suite run per change set.** A green run is final — never re-run it; tee output to `temp/test-logs/` and grep the file if you need details again.
 
-If that run reports **any** failure — including tests that look unrelated to the current change — **stop and ask the user what to do**. Do not ignore them, skip them, filter cargo to a subset, treat them as pre-existing noise, commit, or declare the task done. Wait for an explicit instruction (fix now, bisect, continue anyway, etc.).
+If a test fails because implementation code needs fixing, fix the code and re-run. Only stop and ask the user if you believe an existing test itself needs to be modified, or if failures appear unrelated to the current change and cannot be resolved cleanly without modifying tests. Do not ignore failures, skip them, filter cargo to a subset, treat them as pre-existing noise, commit, or declare the task done while tests are failing.
 
 First-party `static/*.js` is parsed by the `js_syntax` cargo test (`oxc_parser`, locked in `Cargo.lock`). Do not install Node/npm for this, and do not add hand-rolled brace scanners.
 
@@ -22,7 +22,7 @@ Logs: `temp/test-logs/`. Caches: `temp/.cargo/`, `temp/.docker/tests/`.
 
 ## Build & Run Commands
 
-- Tests: `docker compose run --rm tests` (full suite; **any** failure → stop and ask, including “unrelated”)
+- Tests: `docker compose run --rm tests` (full suite; ask before modifying existing tests)
 - Do not run `cargo test` / app binaries outside that container
 - Allowed compose from the sandbox: **`tests` only**. It injects its own env and does not need workspace `.env`.
 - Do **not** `docker compose up`, `build`, or recreate **`webserver`** or **`voice-service`**. Ask the **user** to rebuild/restart those on the host when a live deploy is needed.

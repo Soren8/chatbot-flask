@@ -71,12 +71,13 @@ pub fn extract_enc_key(headers: &HeaderMap) -> Option<EncryptionKey> {
             let cookie = headers
                 .get(header::COOKIE)
                 .and_then(|value| value.to_str().ok());
-            extract_enc_key_cookie(cookie).or_else(|| {
-                let username = session::session_context(cookie)
-                    .ok()
-                    .and_then(|ctx| ctx.username)?;
-                extract_account_enc_key_cookie(cookie, &username)
-            })
+            let username = session::session_context(cookie)
+                .ok()
+                .and_then(|ctx| ctx.username);
+            let account_key = username
+                .as_deref()
+                .and_then(|u| extract_account_enc_key_cookie(cookie, u));
+            account_key.or_else(|| extract_enc_key_cookie(cookie))
         })
 }
 
@@ -155,35 +156,57 @@ pub fn enc_key_cookie_value(key: &EncryptionKey) -> Option<&str> {
 /// last-used, copy a verified key onto the missing cookie. Does not slide
 /// max-age when both cookies are already present.
 pub fn promote_enc_key_cookies(cookie_header: Option<&str>, username: &str) -> Vec<String> {
-    let last = extract_enc_key_cookie(cookie_header);
-    let account = extract_account_enc_key_cookie(cookie_header, username);
-    let Some(key) = last.as_ref().or(account.as_ref()) else {
-        return Vec::new();
-    };
     let Ok(store) = chatbot_core::user_store::UserStore::new() else {
         return Vec::new();
     };
-    if !store
-        .verify_encryption_key(username, key.as_bytes())
-        .unwrap_or(false)
-    {
+    let last = extract_enc_key_cookie(cookie_header);
+    let account = extract_account_enc_key_cookie(cookie_header, username);
+
+    // Prefer account-specific cookie first.
+    let (key, from_account) = if let Some(ref acct_key) = account {
+        if store
+            .verify_encryption_key(username, acct_key.as_bytes())
+            .unwrap_or(false)
+        {
+            (acct_key, true)
+        } else {
+            return Vec::new();
+        }
+    } else if let Some(ref last_key) = last {
+        if store
+            .verify_encryption_key(username, last_key.as_bytes())
+            .unwrap_or(false)
+        {
+            (last_key, false)
+        } else {
+            return Vec::new();
+        }
+    } else {
         return Vec::new();
-    }
+    };
+
     let Some(key_str) = enc_key_cookie_value(key) else {
         return Vec::new();
     };
-    let remembered = chatbot_core::remember_store::extract_token_for_user(cookie_header, username)
-        .is_some();
+
+    let remembered = chatbot_core::remember_store::extract_account_token(cookie_header, username).is_some()
+        || chatbot_core::remember_store::RememberStore::new()
+            .ok()
+            .and_then(|rs| rs.peek_username(chatbot_core::remember_store::extract_token(cookie_header).as_deref()))
+            .as_deref() == Some(username);
+
     let max_age = if remembered {
         chatbot_core::remember_store::REMEMBER_MAX_AGE_SECS
     } else {
         chatbot_core::config::app_config().session_timeout.max(60)
     };
+
     let mut cookies = Vec::new();
-    if last.is_none() {
+    let last_matches = last.as_ref().map(|k| k.as_bytes()) == Some(key.as_bytes());
+    if !last_matches {
         cookies.push(build_enc_key_set_cookie(key_str, max_age));
     }
-    if account.is_none() && remembered {
+    if !from_account && remembered {
         cookies.push(build_enc_key_account_set_cookie(username, key_str, max_age));
     }
     cookies

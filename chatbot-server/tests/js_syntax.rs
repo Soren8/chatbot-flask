@@ -259,5 +259,26 @@ fn main_activity_allows_screenshots_when_unlocked_and_hides_recents_overview() {
     );
 }
 
+#[test]
+fn native_and_web_isolate_multi_account_cached_credentials() {
+    let plugin_src = include_str!(
+        "../../android/app/src/main/java/com/chatbot/app/NativeSecureKey/NativeSecureKeyPlugin.java"
+    );
+    assert!(
+        !plugin_src.contains("k.equals(\"remember\")"),
+        "NativeSecureKeyPlugin sealCachedCredentials must not fall back to generic remember cookie"
+    );
+    assert!(
+        !plugin_src.contains("k.equals(\"enc_key\")"),
+        "NativeSecureKeyPlugin sealCachedCredentials must not fall back to generic enc_key cookie"
+    );
+
+    let enc_key_src = include_str!("../../static/enc-key.js");
+    assert!(
+        enc_key_src.contains("entry.value.mode === 'webauthn-prf'"),
+        "enc-key.js scrubWrappedKeys must preserve webauthn-prf entries"
+    );
+}
+
 
 
